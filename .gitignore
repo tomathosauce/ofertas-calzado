@@ -1,0 +1,14 @@
+# Salidas generadas (locales; NO se publican)
+/data/snapshot.json
+/data/details_converse.json
+/data/history.csv
+/data/history_legacy*.csv
+/data/reports/
+
+# site/ SÍ se versiona: es lo que GitHub Pages publica (lo genera publish.py).
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/

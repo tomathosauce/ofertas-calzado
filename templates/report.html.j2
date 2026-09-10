@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ofertas de calzado · {{ run_ts_human }}</title>
+<style>
+  :root {
+    --bg: #f6f6f7; --card: #ffffff; --text: #1a1a1a; --muted: #6b6b70;
+    --border: #e2e2e5; --accent: #1769ff; --new: #0a7d33; --drop: #b25000;
+    --old: #9a9aa0; --chip: #eceef1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a; --card: #1f1f24; --text: #ececf0; --muted: #9a9aa2;
+      --border: #33333a; --accent: #4d94ff; --new: #4cc46b; --drop: #ff9d52;
+      --old: #75757d; --chip: #2a2a31;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1150px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 32px 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+  .pill {
+    background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+    padding: 4px 12px; font-size: 13px;
+  }
+  .pill b { color: var(--accent); }
+  .errors {
+    background: var(--card); border: 1px solid var(--drop); border-left-width: 4px;
+    border-radius: 6px; padding: 10px 14px; margin: 16px 0; color: var(--drop);
+    font-size: 13px;
+  }
+  .grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .card img {
+    width: 100%; aspect-ratio: 4 / 5; object-fit: cover; background: var(--bg);
+  }
+  .card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .badge {
+    align-self: flex-start; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .04em; padding: 2px 7px; border-radius: 5px;
+    border: 1px solid var(--border); color: var(--muted);
+  }
+  .badge.converse { color: var(--accent); border-color: var(--accent); }
+  .badge.vans { color: var(--drop); border-color: var(--drop); }
+  .name { font-weight: 600; font-size: 14px; }
+  .name a { color: inherit; text-decoration: none; }
+  .name a:hover { text-decoration: underline; }
+  .cat { color: var(--muted); font-size: 12px; }
+  .price { font-size: 15px; font-weight: 700; }
+  .price .old { color: var(--old); font-weight: 400; text-decoration: line-through; margin-left: 6px; font-size: 13px; }
+  .off { color: var(--new); font-weight: 700; font-size: 13px; }
+  .drop-line { color: var(--drop); font-size: 13px; }
+
+  /* --- barra de filtros --- */
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 12px;
+  }
+  .toolbar .group { display: flex; flex-direction: column; gap: 5px; }
+  .toolbar .glabel {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+  }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .seg button {
+    border: 0; background: transparent; color: var(--text); font: inherit;
+    padding: 5px 11px; cursor: pointer; border-left: 1px solid var(--border);
+  }
+  .seg button:first-child { border-left: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  select, .btn {
+    font: inherit; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 7px; padding: 5px 9px; cursor: pointer;
+  }
+  .sort-btns { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .sort-btns button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .count { font-size: 13px; color: var(--muted); }
+  .count a { color: var(--accent); cursor: pointer; margin-left: 8px; }
+
+  /* --- filtro de tallas (multi) --- */
+  .size-dd { position: relative; }
+  #size-btn[aria-expanded="true"] { border-color: var(--accent); }
+  #size-btn.active { border-color: var(--accent); color: var(--accent); }
+  #size-panel {
+    position: absolute; z-index: 40; top: calc(100% + 4px); left: 0;
+    width: 320px; max-height: 320px; overflow-y: auto;
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.22);
+  }
+  .size-panel-group { margin-bottom: 8px; }
+  .size-panel-group strong { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 5px; }
+  .size-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 3px 8px; }
+  .size-opts label { display: flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; }
+  .size-opts input { margin: 0; }
+  #size-clear { display: inline-block; margin-top: 4px; color: var(--accent); cursor: pointer; font-size: 12px; }
+
+  /* --- tabla --- */
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { cursor: pointer; user-select: none; white-space: nowrap; }
+  th:hover { color: var(--accent); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: var(--chip); }
+  td a { color: var(--accent); text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--chip); color: var(--muted); }
+  .sizes { cursor: help; border-bottom: 1px dotted var(--muted); }
+  .empty { color: var(--muted); font-style: italic; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 12px; }
+
+  /* --- vista previa al pasar el ratón --- */
+  #preview {
+    position: fixed; z-index: 50; pointer-events: none; display: none;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 6px; box-shadow: 0 8px 30px rgba(0,0,0,.25);
+  }
+  #preview img { display: block; width: 220px; height: 275px; object-fit: cover; border-radius: 6px; background: var(--bg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ofertas de calzado</h1>
+  <p class="sub">Generado el {{ run_ts_human }}</p>
+
+  <div class="stats">
+    <span class="pill">Total en oferta: <b>{{ total }}</b></span>
+    {% for store, n in counts.items() %}
+      <span class="pill">{{ store|capitalize }}: <b>{{ n }}</b></span>
+    {% endfor %}
+    <span class="pill">Nuevas: <b>{{ nuevos|length }}</b></span>
+    {% if bajadas %}<span class="pill">Bajadas: <b>{{ bajadas|length }}</b></span>{% endif %}
+  </div>
+
+  {% if errors %}
+    <div class="errors">
+      <b>Avisos:</b>
+      <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  <h2>🆕 Nuevas ofertas</h2>
+  {% if nuevos %}
+    <div class="grid">
+      {% for o in nuevos %}
+        <article class="card">
+          {% if o.image_url %}<img src="{{ o.image_url }}" alt="{{ o.name }}" loading="lazy">{% endif %}
+          <div class="body">
+            <span class="badge {{ o.store }}">{{ o.store }}</span>
+            <div class="name"><a href="{{ o.url }}" target="_blank" rel="noopener">{{ o.name }}</a></div>
+            {% if o.category %}<div class="cat">{{ o.category }}</div>{% endif %}
+            <div class="cat">
+              {{ o.gender|capitalize if o.gender else '—' }}
+              {%- if o.age_group == 'nino' %} · Niño{% elif o.age_group == 'adulto' %} · Adulto{% endif %}
+            </div>
+            <div class="price">
+              ${{ '%.2f'|format(o.price) }}
+              {% if o.old_price %}<span class="old">${{ '%.2f'|format(o.old_price) }}</span>{% endif %}
+            </div>
+            {% if o.discount_pct %}<div class="off">-{{ o.discount_pct }}%</div>{% endif %}
+            {% if o.sizes_available %}<div class="cat">Tallas: {{ o.sizes_available|join(', ') }}</div>{% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">Sin novedades desde la última corrida.</p>
+  {% endif %}
+
+  {% if bajadas %}
+    <h2>💲 Bajadas de precio</h2>
+    <div class="grid">
+      {% for o, prev_price in bajadas %}
+        <article class="card">
+          {% if o.image_url %}<img src="{{ o.image_url }}" alt="{{ o.name }}" loading="lazy">{% endif %}
+          <div class="body">
+            <span class="badge {{ o.store }}">{{ o.store }}</span>
+            <div class="name"><a href="{{ o.url }}" target="_blank" rel="noopener">{{ o.name }}</a></div>
+            <div class="price">${{ '%.2f'|format(o.price) }}
+              <span class="old">${{ '%.2f'|format(prev_price) }}</span></div>
+            <div class="drop-line">Bajó ${{ '%.2f'|format(prev_price - o.price) }}</div>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <h2>Todo el calzado en oferta</h2>
+  {% if offers %}
+    <div class="toolbar">
+      <div class="group">
+        <span class="glabel">Tienda</span>
+        <span class="seg" data-filter="store">
+          <button data-val="" aria-pressed="true">Todas</button>
+          {% for store in counts.keys() %}
+            <button data-val="{{ store }}" aria-pressed="false">{{ store|capitalize }}</button>
+          {% endfor %}
+        </span>
+      </div>
+      <div class="group">
+        <span class="glabel">Género</span>
+        <span class="seg" data-filter="gender">
+          <button data-val="" aria-pressed="true">Todos</button>
+          {% for g in genders_present %}
+            <button data-val="{{ g }}" aria-pressed="false">{{ g|capitalize }}</button>
+          {% endfor %}
+        </span>
+      </div>
+      <div class="group">
+        <span class="glabel">Edad</span>
+        <span class="seg" data-filter="age">
+          <button data-val="" aria-pressed="true">Todas</button>
+          {% if 'adulto' in ages_present %}<button data-val="adulto" aria-pressed="false">Adulto</button>{% endif %}
+          {% if 'nino' in ages_present %}<button data-val="nino" aria-pressed="false">Niño</button>{% endif %}
+        </span>
+      </div>
+      <div class="group size-dd">
+        <span class="glabel">Tallas</span>
+        <button type="button" id="size-btn" class="btn" aria-expanded="false">Todas las tallas ▾</button>
+        <div id="size-panel" hidden>
+          {% for store, sizes in sizes_by_store.items() %}
+            {% if sizes %}
+            <div class="size-panel-group">
+              <strong>{{ store|capitalize }}</strong>
+              <div class="size-opts">
+                {% for s in sizes %}
+                <label><input type="checkbox" value="{{ s }}"> {{ s }}</label>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+          {% endfor %}
+          <a id="size-clear">Quitar tallas</a>
+        </div>
+      </div>
+      <div class="group">
+        <span class="glabel">Ordenar</span>
+        <span class="sort-btns" id="sort-btns">
+          <button data-key="discount" data-dir="desc" aria-pressed="true">Descuento</button>
+          <button data-key="price" data-dir="asc" aria-pressed="false">Precio ↑</button>
+          <button data-key="price" data-dir="desc" aria-pressed="false">Precio ↓</button>
+          <button data-key="name" data-dir="asc" aria-pressed="false">Nombre</button>
+        </span>
+      </div>
+      <div class="group">
+        <span class="glabel">&nbsp;</span>
+        <span class="count"><span id="shown">{{ offers|length }}</span> de {{ offers|length }}
+          <a id="clear">Limpiar filtros</a></span>
+      </div>
+    </div>
+
+    <div class="table-scroll">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th data-k="store">Tienda</th>
+          <th data-k="name">Producto</th>
+          <th data-k="gender">Género · Edad</th>
+          <th data-k="category">Categoría</th>
+          <th data-k="sizes">Tallas</th>
+          <th class="num" data-k="price" data-num="1">Precio</th>
+          <th class="num" data-k="old_price" data-num="1">Antes</th>
+          <th class="num" data-k="discount_pct" data-num="1">Dcto.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in offers %}
+          <tr
+            data-store="{{ o.store }}"
+            data-gender="{{ o.gender }}"
+            data-age="{{ o.age_group }}"
+            data-sizes="{{ o.sizes_available|join('|') }}"
+            data-price="{{ '%.2f'|format(o.price) }}"
+            data-discount="{{ o.discount_pct }}"
+            data-name="{{ o.name|lower }}"
+            data-img="{{ o.image_url }}">
+            <td>{{ o.store }}</td>
+            <td><a href="{{ o.url }}" target="_blank" rel="noopener">{{ o.name }}</a></td>
+            <td>
+              <span class="tag">{{ o.gender|capitalize if o.gender else '—' }}</span>
+              {% if o.age_group == 'nino' %}<span class="tag">Niño</span>{% endif %}
+            </td>
+            <td>{{ o.category }}</td>
+            <td>
+              {% if o.sizes_available %}
+                <span class="sizes" title="{{ o.sizes_available|join(', ') }}">{{ o.sizes_available|length }} talla{{ 's' if o.sizes_available|length != 1 }}</span>
+              {% else %}<span class="cat">—</span>{% endif %}
+            </td>
+            <td class="num">${{ '%.2f'|format(o.price) }}</td>
+            <td class="num">{% if o.old_price %}${{ '%.2f'|format(o.old_price) }}{% endif %}</td>
+            <td class="num">{% if o.discount_pct %}-{{ o.discount_pct }}%{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% else %}
+    <p class="empty">No se encontraron ofertas.</p>
+  {% endif %}
+
+  {% if retiradas %}
+    <h2>Ya no están en oferta ({{ retiradas|length }})</h2>
+    <p class="cat">{{ retiradas|join(', ') }}</p>
+  {% endif %}
+
+  <footer>
+    Monitor personal de ofertas · datos de converse.com.pa y vans.com.pa ·
+    corrida {{ run_ts_iso }}
+  </footer>
+</div>
+
+<div id="preview"><img alt=""></div>
+
+<script>
+(function () {
+  var table = document.getElementById("tbl");
+  if (!table) return;
+  var tbody = table.tBodies[0];
+  var allRows = Array.prototype.slice.call(tbody.rows);
+  var shown = document.getElementById("shown");
+
+  var filters = { store: "", gender: "", age: "", sizes: [] };
+
+  function matchSizes(r) {
+    if (!filters.sizes.length) return true;
+    var have = "|" + r.dataset.sizes + "|";
+    return filters.sizes.some(function (s) { return have.indexOf("|" + s + "|") > -1; });
+  }
+
+  function apply() {
+    var n = 0;
+    allRows.forEach(function (r) {
+      var ok =
+        (!filters.store || r.dataset.store === filters.store) &&
+        (!filters.gender || r.dataset.gender === filters.gender) &&
+        (!filters.age || r.dataset.age === filters.age) &&
+        matchSizes(r);
+      r.hidden = !ok;
+      if (ok) n++;
+    });
+    if (shown) shown.textContent = n;
+  }
+
+  // Botones segmentados (tienda / género / edad)
+  document.querySelectorAll(".seg[data-filter]").forEach(function (seg) {
+    var key = seg.dataset.filter;
+    seg.addEventListener("click", function (e) {
+      var b = e.target.closest("button");
+      if (!b) return;
+      seg.querySelectorAll("button").forEach(function (x) {
+        x.setAttribute("aria-pressed", x === b ? "true" : "false");
+      });
+      filters[key] = b.dataset.val;
+      apply();
+    });
+  });
+
+  // Filtro de tallas (selección múltiple con checkboxes)
+  var sizeBtn = document.getElementById("size-btn");
+  var sizePanel = document.getElementById("size-panel");
+  var sizeBoxes = sizePanel
+    ? Array.prototype.slice.call(sizePanel.querySelectorAll('input[type="checkbox"]'))
+    : [];
+
+  function syncSizeButton() {
+    if (!sizeBtn) return;
+    var n = filters.sizes.length;
+    sizeBtn.textContent = (n ? n + (n === 1 ? " talla" : " tallas") : "Todas las tallas") + " ▾";
+    sizeBtn.classList.toggle("active", n > 0);
+  }
+  function readSizeBoxes() {
+    filters.sizes = sizeBoxes.filter(function (b) { return b.checked; })
+                             .map(function (b) { return b.value; });
+    syncSizeButton();
+    apply();
+  }
+  function clearSizes() {
+    sizeBoxes.forEach(function (b) { b.checked = false; });
+    filters.sizes = [];
+    syncSizeButton();
+  }
+
+  if (sizeBtn && sizePanel) {
+    sizeBtn.addEventListener("click", function () {
+      var open = sizePanel.hidden;
+      sizePanel.hidden = !open;
+      sizeBtn.setAttribute("aria-expanded", String(open));
+    });
+    sizePanel.addEventListener("change", function (e) {
+      if (e.target.matches('input[type="checkbox"]')) readSizeBoxes();
+    });
+    document.addEventListener("click", function (e) {
+      if (!sizePanel.hidden && !e.target.closest(".size-dd")) {
+        sizePanel.hidden = true;
+        sizeBtn.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+  var sizeClear = document.getElementById("size-clear");
+  if (sizeClear) sizeClear.addEventListener("click", function () {
+    clearSizes();
+    apply();
+  });
+
+  // Limpiar filtros
+  var clear = document.getElementById("clear");
+  if (clear) clear.addEventListener("click", function () {
+    filters = { store: "", gender: "", age: "", sizes: [] };
+    document.querySelectorAll(".seg[data-filter] button").forEach(function (b) {
+      b.setAttribute("aria-pressed", b.dataset.val === "" ? "true" : "false");
+    });
+    clearSizes();
+    apply();
+  });
+
+  // Ordenar
+  function sortBy(key, dir) {
+    var num = key === "price" || key === "discount";
+    var rows = Array.prototype.slice.call(tbody.rows);
+    rows.sort(function (a, b) {
+      var x, y;
+      if (key === "name") { x = a.dataset.name; y = b.dataset.name; }
+      else { x = parseFloat(a.dataset[key]) || 0; y = parseFloat(b.dataset[key]) || 0; }
+      if (num) return dir === "asc" ? x - y : y - x;
+      return dir === "asc" ? String(x).localeCompare(y) : String(y).localeCompare(x);
+    });
+    rows.forEach(function (r) { tbody.appendChild(r); });
+  }
+  var sortBtns = document.getElementById("sort-btns");
+  if (sortBtns) sortBtns.addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    sortBtns.querySelectorAll("button").forEach(function (x) {
+      x.setAttribute("aria-pressed", x === b ? "true" : "false");
+    });
+    sortBy(b.dataset.key, b.dataset.dir);
+  });
+
+  // Orden por clic en cabecera (alterna asc/desc)
+  table.querySelectorAll("th[data-k]").forEach(function (th, idx) {
+    var asc = true;
+    th.addEventListener("click", function () {
+      var isNum = th.dataset.num === "1";
+      var rows = Array.prototype.slice.call(tbody.rows);
+      rows.sort(function (a, b) {
+        var x = a.cells[idx].textContent.trim();
+        var y = b.cells[idx].textContent.trim();
+        if (isNum) {
+          x = parseFloat(x.replace(/[^0-9.\-]/g, "")) || 0;
+          y = parseFloat(y.replace(/[^0-9.\-]/g, "")) || 0;
+          return asc ? x - y : y - x;
+        }
+        return asc ? x.localeCompare(y) : y.localeCompare(x);
+      });
+      asc = !asc;
+      rows.forEach(function (r) { tbody.appendChild(r); });
+    });
+  });
+
+  // Vista previa de la imagen al pasar el ratón
+  var pv = document.getElementById("preview");
+  var pvImg = pv ? pv.querySelector("img") : null;
+  function place(e) {
+    var w = 232, h = 289, pad = 16;
+    var x = e.clientX + pad, y = e.clientY + pad;
+    if (x + w > window.innerWidth) x = e.clientX - w - pad;
+    if (y + h > window.innerHeight) y = window.innerHeight - h - pad;
+    if (y < pad) y = pad;
+    pv.style.left = x + "px";
+    pv.style.top = y + "px";
+  }
+  tbody.addEventListener("mouseover", function (e) {
+    var r = e.target.closest("tr");
+    if (!r || !pv || !r.dataset.img) return;
+    if (pvImg.src !== r.dataset.img) pvImg.src = r.dataset.img;
+    pv.style.display = "block";
+    place(e);
+  });
+  tbody.addEventListener("mousemove", function (e) {
+    if (pv && pv.style.display === "block") place(e);
+  });
+  tbody.addEventListener("mouseout", function (e) {
+    var to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest("tr") : null;
+    if (!to && pv) pv.style.display = "none";
+  });
+})();
+</script>
+</body>
+</html>
