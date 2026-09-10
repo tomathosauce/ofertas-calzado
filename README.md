@@ -81,23 +81,25 @@ reports/
 
 ## Publicar en GitHub Pages
 
-`publish.py` copia los reportes a `site/` (lo que Pages sirve) y, con `--push`, lo
-sube. **La autenticación de git/GitHub la pones tú**: el script nunca recibe ni
-maneja tokens. Usa `gh auth login`, un credential helper, o `git@github.com:` por SSH.
+Sitio actual: **https://tomathosauce.github.io/ofertas-calzado/**
 
-**Preparación (una vez):**
+`publish.py` copia los reportes a `site/` (lo que Pages sirve) y, con `--push`, lo
+sube. La autenticación la pones tú (`gh auth login` o un credential helper); el
+script no recibe ni maneja tokens.
+
+**Preparación (una vez), ya hecha en este repo:**
 
 ```bash
-git init
-git add -A && git commit -m "init"
-git branch -M main
-git remote add origin https://github.com/USUARIO/REPO.git
-git push -u origin main
+git init && git add -A && git commit -m "init" && git branch -M main
+gh repo create ofertas-calzado --public --source=. --remote=origin --push
+# El GITHUB_TOKEN del workflow no puede crear el sitio Pages en un repo nuevo,
+# así que se habilita una vez con tu propio token (scope repo):
+gh api -X POST repos/USUARIO/ofertas-calzado/pages -f build_type=workflow
 ```
 
-Luego en GitHub: **Settings → Pages → Source = GitHub Actions**. El workflow
-`.github/workflows/deploy-pages.yml` publica `site/` en cada push (no hace scraping:
-Converse bloquea las IPs de datacenter, así que el scraping se queda en tu equipo).
+El workflow `.github/workflows/deploy-pages.yml` publica `site/` en cada push que lo
+toque (no hace scraping: Converse bloquea las IPs de datacenter, el scraping se queda
+en tu equipo).
 
 **Cada actualización:**
 
@@ -106,12 +108,11 @@ python scrape_ofertas.py          # o --no-details para ir rápido
 python publish.py --push
 ```
 
-El sitio queda en `https://USUARIO.github.io/REPO/` (último reporte) con el histórico
-en `.../reports/`. `publish.py` sin `--push` solo regenera `site/` para revisarlo.
+`publish.py` sin `--push` solo regenera `site/` para revisarlo. El último reporte
+queda en la raíz y el histórico en `.../reports/`.
 
-Notas: el repo puede ser público (datos de producto públicos; el CSV y el snapshot
-quedan fuera por `.gitignore`) o privado si tienes GitHub Pro. Las imágenes se
-enlazan desde los CDN de las tiendas.
+Notas: el CSV y el snapshot quedan fuera por `.gitignore`; solo se publican reportes
+de precios públicos. Las imágenes se enlazan desde los CDN de las tiendas.
 
 ## Estructura
 
