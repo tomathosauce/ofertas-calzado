@@ -334,6 +334,16 @@
   var shown = document.getElementById("shown");
 
   var filters = { store: "", gender: "", age: "", sizes: [] };
+  // Clave compartida por los reportes diarios de este sitio.
+  var filterStorageKey = "ofertas-calzado.filters.v1";
+
+  function saveFilters() {
+    try {
+      localStorage.setItem(filterStorageKey, JSON.stringify(filters));
+    } catch (e) {
+      // Los filtros siguen funcionando si el navegador bloquea el almacenamiento.
+    }
+  }
 
   function matchSizes(r) {
     if (!filters.sizes.length) return true;
@@ -353,6 +363,7 @@
       if (ok) n++;
     });
     if (shown) shown.textContent = n;
+    saveFilters();
   }
 
   // Botones segmentados (tienda / género / edad)
@@ -384,7 +395,10 @@
   }
   function readSizeBoxes() {
     filters.sizes = sizeBoxes.filter(function (b) { return b.checked; })
-                             .map(function (b) { return b.value; });
+                             .map(function (b) { return b.value; })
+                             .filter(function (value, index, values) {
+                               return values.indexOf(value) === index;
+                             });
     syncSizeButton();
     apply();
   }
@@ -426,6 +440,37 @@
     clearSizes();
     apply();
   });
+
+  // Restaurar solo valores que existen en este reporte; ignorar datos inválidos.
+  try {
+    var saved = JSON.parse(localStorage.getItem(filterStorageKey));
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+      document.querySelectorAll(".seg[data-filter]").forEach(function (seg) {
+        var key = seg.dataset.filter;
+        seg.querySelectorAll("button").forEach(function (b) {
+          if (typeof saved[key] === "string" && b.dataset.val === saved[key]) {
+            filters[key] = saved[key];
+          }
+        });
+      });
+      if (Array.isArray(saved.sizes)) {
+        filters.sizes = sizeBoxes.map(function (b) { return b.value; })
+          .filter(function (value, index, values) {
+            return saved.sizes.indexOf(value) !== -1 && values.indexOf(value) === index;
+          });
+      }
+    }
+  } catch (e) {
+    // Un valor corrupto o localStorage deshabilitado no impiden usar el reporte.
+  }
+  document.querySelectorAll(".seg[data-filter]").forEach(function (seg) {
+    seg.querySelectorAll("button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.val === filters[seg.dataset.filter]));
+    });
+  });
+  sizeBoxes.forEach(function (b) { b.checked = filters.sizes.indexOf(b.value) !== -1; });
+  syncSizeButton();
+  apply();
 
   // Ordenar
   function sortBy(key, dir) {

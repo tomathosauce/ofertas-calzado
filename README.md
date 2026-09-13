@@ -115,6 +115,11 @@ Autocontenible (doble clic para abrir), tema claro/oscuro. Tres bloques:
    - **Talla**: lista única con las tallas reales agrupadas por tienda.
    - **Ordenar**: Descuento, Precio ↑, Precio ↓, Nombre (o clic en cualquier cabecera).
    - Contador "N de M" y "Limpiar filtros".
+   - Recuerda tienda, género, edad y tallas en este navegador mediante localStorage,
+     también al abrir el siguiente reporte diario en el mismo sitio. Ignora
+     selecciones que ya no existen en el reporte; "Limpiar filtros" guarda la
+     selección vacía. Si el navegador bloquea localStorage, los filtros funcionan
+     durante la visita sin persistencia.
    - Al pasar el ratón por una fila se ve la **foto** del zapato.
 
 Género y edad se deducen del badge de Converse ("Preescolar…", "Mujer…") y de los tags
