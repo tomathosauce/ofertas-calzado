@@ -1,0 +1,18 @@
+[Unit]
+Description=Check Converse and Vans Panama shoe sales
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=2h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/ofertas-calzado
+ExecStart=%h/ofertas-calzado/.venv/bin/python -u %h/ofertas-calzado/scrape_ofertas.py
+ExecStartPost=/usr/bin/systemctl --user start --no-block ofertas-calzado-publish.service
+TimeoutStartSec=30min
+Restart=on-failure
+RestartSec=15min
+# Exit 2 means a report was generated, but a store failed or issued a warning.
+SuccessExitStatus=2
+UMask=0077

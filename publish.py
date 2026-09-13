@@ -9,7 +9,7 @@ sirve:
     site/reports/index.html     -> índice navegable del histórico
     site/.nojekyll              -> para que Pages no procese nada
 
-Con ``--push`` hace además ``git add site`` + ``git commit`` + ``git push``.
+Con ``--push`` publica solo los reportes en una copia temporal de origin/main.
 La autenticación de git/GitHub la pones tú (``gh auth login`` o un credential
 helper); este script nunca recibe ni maneja tokens.
 """
@@ -18,22 +18,23 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import html
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 REPORTS_DIR = ROOT / "data" / "reports"
 SITE_DIR = ROOT / "site"
-SITE_REPORTS = SITE_DIR / "reports"
 
 _DATED = re.compile(r"^ofertas_(\d{4}-\d{2}-\d{2}_\d{4})\.html$")
 
 
-def dated_reports() -> list[Path]:
-    files = [p for p in REPORTS_DIR.glob("ofertas_*.html") if _DATED.match(p.name)]
+def dated_reports(directory: Path = REPORTS_DIR) -> list[Path]:
+    files = [p for p in directory.glob("ofertas_*.html") if _DATED.match(p.name)]
     return sorted(files, key=lambda p: p.name, reverse=True)
 
 
@@ -55,27 +56,24 @@ _INDEX_TMPL = """<!doctype html>
 """
 
 
-def build_site() -> Path:
-    reports = dated_reports()
+def build_site(site_dir: Path = SITE_DIR) -> Path:
+    reports = dated_reports(REPORTS_DIR)
     if not reports:
         sys.exit(
             f"No hay reportes en {REPORTS_DIR}.\n"
             "Ejecuta primero:  python scrape_ofertas.py"
         )
 
-    SITE_REPORTS.mkdir(parents=True, exist_ok=True)
-
-    # Quitar de site/reports los HTML que ya no existan en data/reports.
-    keep = {p.name for p in reports}
-    for old in SITE_REPORTS.glob("ofertas_*.html"):
-        if old.name not in keep:
-            old.unlink()
+    site_reports = site_dir / "reports"
+    site_reports.mkdir(parents=True, exist_ok=True)
 
     for src in reports:
-        shutil.copyfile(src, SITE_REPORTS / src.name)
+        shutil.copyfile(src, site_reports / src.name)
 
+    # Conservar el histórico remoto, incluso si no existe en este equipo.
+    reports = dated_reports(site_reports)
     latest = reports[0]
-    index_path = SITE_DIR / "index.html"
+    index_path = site_dir / "index.html"
     shutil.copyfile(latest, index_path)
     # Enlace flotante al histórico dentro del reporte publicado.
     _NAV = (
@@ -98,51 +96,47 @@ def build_site() -> Path:
             f'  <li><a href="{html.escape(path.name)}">'
             f"{when:%d/%m/%Y %H:%M}</a></li>"
         )
-    (SITE_REPORTS / "index.html").write_text(
+    (site_reports / "index.html").write_text(
         _INDEX_TMPL.format(items="\n".join(items), n=len(reports)), encoding="utf-8"
     )
-    (SITE_DIR / ".nojekyll").write_text("", encoding="utf-8")
+    (site_dir / ".nojekyll").write_text("", encoding="utf-8")
 
     print(f"site/ listo · index.html = {latest.name} · {len(reports)} reporte(s)")
     return latest
 
 
-def _git(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=ROOT, text=True, capture_output=True)
+def _git(*args: str, cwd: Path | None = None) -> str:
+    result = subprocess.run(
+        ["git", *args], cwd=cwd or ROOT, text=True, capture_output=True,
+        timeout=120,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "/bin/false"},
+    )
+    if result.returncode:
+        raise RuntimeError(f"git {args[0]} falló:\n{result.stderr or result.stdout}")
+    return result.stdout.strip()
 
 
-def push(message: str) -> None:
-    if not (ROOT / ".git").is_dir():
-        sys.exit(
-            "Todavía no es un repo git. Prepáralo una sola vez:\n"
-            "  git init\n"
-            "  git add -A && git commit -m \"init\"\n"
-            "  git branch -M main\n"
-            "  git remote add origin https://github.com/USUARIO/REPO.git\n"
-            "  git push -u origin main\n"
-            "Luego, en GitHub: Settings -> Pages -> Source = GitHub Actions.\n"
-            "Después vuelve a ejecutar:  python publish.py --push"
-        )
-    if not _git("remote").stdout.strip():
-        sys.exit("El repo no tiene remoto. Añádelo:  git remote add origin <URL>")
-
-    _git("add", "site")
-    if not _git("status", "--porcelain", "site").stdout.strip():
-        print("site/ sin cambios; nada que publicar.")
-        return
-
-    done = _git("commit", "-m", message)
-    if done.returncode != 0:
-        sys.exit(f"git commit falló:\n{done.stderr or done.stdout}")
-
-    done = _git("push")
-    if done.returncode != 0:
-        sys.exit(
-            "git push falló (probablemente autenticación). Configura tu acceso a "
-            "GitHub (por ejemplo `gh auth login`) y reintenta.\n"
-            + (done.stderr or done.stdout)
-        )
-    print("Publicado. GitHub Pages actualizará el sitio en ~1 minuto.")
+def push(message: str | None = None) -> None:
+    # Partir siempre del remoto permite reintentar tras fallos y evita publicar
+    # commits o cambios del usuario. Git rechaza avances concurrentes sin forzar.
+    remote = _git("remote", "get-url", "--push", "origin")
+    identity = {key: _git("config", "--get", key) for key in ("user.name", "user.email")}
+    with tempfile.TemporaryDirectory(prefix="ofertas-publish-") as directory:
+        checkout = Path(directory) / "repo"
+        _git("clone", "--quiet", "--depth", "1", "--single-branch", "--branch", "main",
+             "--", remote, str(checkout))
+        for key, value in identity.items():
+            _git("config", key, value, cwd=checkout)
+        latest = build_site(checkout / "site")
+        _git("add", "--", "site", cwd=checkout)
+        if not _git("diff", "--cached", "--name-only", cwd=checkout):
+            print("site/ ya está actualizado en GitHub; nada que publicar.")
+            return
+        stamp = _DATED.match(latest.name).group(1)
+        _git("-c", "commit.gpgsign=false", "commit", "-m",
+             message or f"reporte {stamp}", cwd=checkout)
+        _git("push", "origin", "HEAD:refs/heads/main", cwd=checkout)
+    print("Publicado. El workflow de GitHub Pages actualizará el sitio.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -157,10 +151,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-m", "--message", help="mensaje de commit")
     args = parser.parse_args(argv)
 
-    latest = build_site()
-    if args.push:
-        stamp = _DATED.match(latest.name).group(1)
-        push(args.message or f"reporte {stamp}")
+    try:
+        if args.push:
+            push(args.message)
+        else:
+            build_site()
+    except (RuntimeError, subprocess.TimeoutExpired) as err:
+        print(f"Publicación fallida: {err}", file=sys.stderr)
+        return 1
     return 0
 
 

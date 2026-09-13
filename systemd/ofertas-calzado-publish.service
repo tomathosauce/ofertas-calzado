@@ -1,0 +1,17 @@
+[Unit]
+Description=Publish shoe sale reports to GitHub Pages
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=2h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/ofertas-calzado
+ExecStart=%h/ofertas-calzado/.venv/bin/python -u %h/ofertas-calzado/publish.py --push
+Environment=GIT_TERMINAL_PROMPT=0
+Environment=GIT_ASKPASS=/bin/false
+TimeoutStartSec=10min
+Restart=on-failure
+RestartSec=15min
+UMask=0077

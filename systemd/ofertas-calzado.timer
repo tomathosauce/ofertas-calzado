@@ -1,0 +1,10 @@
+[Unit]
+Description=Check shoe sales daily at 09:00 Panama time
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 America/Panama
+Persistent=true
+Unit=ofertas-calzado.service
+
+[Install]
+WantedBy=timers.target

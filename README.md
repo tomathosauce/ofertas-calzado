@@ -5,7 +5,7 @@ Herramienta de línea de comandos que revisa las páginas de rebajas de
 ejecución, genera un **reporte HTML** + un **histórico CSV** marcando los productos
 **nuevos en oferta** respecto a la corrida anterior.
 
-- Ejecución **manual** (no hay proceso en segundo plano ni cuentas externas).
+- Ejecución manual o **automática diaria** con un timer de systemd en Linux.
 - Sin notificaciones push: el resultado es el HTML y el CSV en `data/`.
 
 ## Instalación
@@ -20,6 +20,67 @@ protección Imperva/Incapsula y requiere un navegador real. **Vans** usa el JSON
 de Shopify y funciona sin navegador.
 
 ## Uso
+
+### Revisión automática (Linux con systemd)
+
+El timer incluido revisa ambas tiendas **todos los días a las 9:00 a. m. de
+Panamá**. Si el equipo estaba apagado, ejecuta la revisión pendiente cuando
+el timer vuelve a activarse. El equipo necesita conexión a Internet; no se
+despierta ni se enciende automáticamente.
+
+Los archivos suponen que el proyecto está en `~/ofertas-calzado` y que sus
+dependencias están instaladas en `.venv`. Configura primero GitHub con
+`./setup-github.sh`. Si mueves el proyecto, cambia las rutas de ambos archivos
+`systemd/*.service` antes de instalarlos.
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/*.service systemd/*.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now ofertas-calzado.timer
+# Permite funcionar después de cerrar sesión y arrancar al encender el equipo:
+loginctl enable-linger "$USER"
+```
+
+Abre `data/reports/ofertas_latest.html` para consultar el último resultado.
+Cada revisión guarda también un reporte fechado y actualiza el CSV histórico.
+Las novedades se comparan con la revisión anterior, aunque no hayas abierto
+su reporte. Al terminar con un reporte válido, activa un servicio independiente
+que publica en **https://tomathosauce.github.io/ofertas-calzado/**.
+También publica resultados parciales, con los avisos de las tiendas que fallaron.
+Si ninguna tienda responde, conserva el sitio publicado anteriormente.
+
+```bash
+# Próxima revisión
+systemctl --user list-timers ofertas-calzado.timer
+# Revisar ahora (systemd evita dos ejecuciones simultáneas del servicio)
+systemctl --user start ofertas-calzado.service
+# Estado y registro de las revisiones
+systemctl --user status ofertas-calzado.service
+systemctl --user status ofertas-calzado-publish.service
+journalctl --user -u ofertas-calzado.service -u ofertas-calzado-publish.service -n 80 --no-pager
+# Reintentar la publicación sin volver a consultar las tiendas
+systemctl --user start ofertas-calzado-publish.service
+# Desactivar las revisiones automáticas
+systemctl --user disable --now ofertas-calzado.timer
+systemctl --user stop ofertas-calzado.service ofertas-calzado-publish.service
+```
+
+El servicio limita cada ejecución a 30 minutos. Un fallo total marca el servicio
+como fallido; un fallo parcial (salida 2) permite guardar el reporte de las
+tiendas que respondieron y deja el aviso en el registro y el reporte.
+Cada servicio reintenta sus fallos cada 15 minutos, con un máximo de tres
+arranques en dos horas. Publicar tiene un límite de 10 minutos por intento y
+sus reintentos reutilizan los reportes, sin repetir el scraping. Después de
+agotar los intentos, el siguiente horario diario vuelve a iniciar el flujo.
+Los fallos quedan en el journal; no se envían notificaciones.
+
+Para cambiar el horario, edita `OnCalendar` en
+`~/.config/systemd/user/ofertas-calzado.timer`, ejecuta
+`systemctl --user daemon-reload` y luego
+`systemctl --user restart ofertas-calzado.timer`.
+
+### Revisión manual
 
 ```bash
 python scrape_ofertas.py                 # ambas tiendas -> reporte + CSV + resumen
@@ -83,8 +144,11 @@ reports/
 
 Sitio actual: **https://tomathosauce.github.io/ofertas-calzado/**
 
-`publish.py` copia los reportes a `site/` (lo que Pages sirve) y, con `--push`, lo
-sube. La autenticación la pones tú (`gh auth login` o un credential helper); el
+`publish.py` copia los reportes a `site/` (lo que Pages sirve). Con `--push`,
+prepara y publica el sitio en una copia temporal de `origin/main`, conservando
+los reportes que ya estaban publicados. No modifica la rama local ni publica
+otros cambios o commits locales. La autenticación la pones tú (`gh auth login`
+o un credential helper); el
 script no recibe ni maneja tokens.
 
 **Preparación (una vez), ya hecha en este repo:**
@@ -101,6 +165,18 @@ El workflow `.github/workflows/deploy-pages.yml` publica `site/` en cada push qu
 toque (no hace scraping: Converse bloquea las IPs de datacenter, el scraping se queda
 en tu equipo).
 
+Para instalar GitHub CLI y configurar la autenticación en Debian/Ubuntu:
+
+```bash
+./setup-github.sh
+```
+
+Ejecuta el script como tu usuario normal, **sin sudo**. El script solicita sudo
+para instalar paquetes y después inicia la autorización de GitHub en el navegador.
+Si `gh` ya está instalado, omite la instalación; si ya tienes una sesión válida,
+la reutiliza. Configura las credenciales de Git para tu usuario, pero no hace
+push ni activa la publicación automática del timer.
+
 **Cada actualización:**
 
 ```bash
@@ -110,6 +186,10 @@ python publish.py --push
 
 `publish.py` sin `--push` solo regenera `site/` para revisarlo. El último reporte
 queda en la raíz y el histórico en `.../reports/`.
+La publicación usa commits normales, sin force-push. Si alguien actualiza
+`main` durante la publicación y Git rechaza el push, el siguiente intento
+parte de la nueva versión remota. Los reportes se conservan localmente para
+poder reintentar si falla la conexión.
 
 Notas: el CSV y el snapshot quedan fuera por `.gitignore`; solo se publican reportes
 de precios públicos. Las imágenes se enlazan desde los CDN de las tiendas.
