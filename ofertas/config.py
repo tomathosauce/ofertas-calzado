@@ -53,3 +53,5 @@ CONVERSE_FOOTWEAR_FILTER = "type_of_product=1039"
 VANS_PRODUCTS_JSON = "https://www.vans.com.pa/collections/sale-eoss/products.json"
 VANS_PRODUCT_URL = "https://www.vans.com.pa/products/{handle}"
 VANS_FOOTWEAR_TYPE = "CALZADO"
+VANS_RETRIES = 5     # reintentos por página (p. ej. ante 429 Too Many Requests)
+VANS_BACKOFF = 5.0   # segundos; se duplica en cada reintento (5, 10, 20, 40, 80)

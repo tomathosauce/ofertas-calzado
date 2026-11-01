@@ -32,37 +32,50 @@ class VansStore(Store):
     # ------------------------------------------------------------------
     def _download_all(self) -> list[dict]:
         headers = {"User-Agent": config.USER_AGENT, "Accept": "application/json"}
+        products: list[dict] = []
+        with httpx.Client(
+            timeout=config.HTTP_TIMEOUT, headers=headers, follow_redirects=True
+        ) as client:
+            for page in range(1, config.MAX_PAGES + 1):
+                batch = self._get_page(client, page)
+                if not batch:
+                    break
+                products.extend(batch)
+                time.sleep(config.REQUEST_DELAY[0])
+        if not products:
+            # Shopify devuelve 200 y {"products":[]} si cambia el handle
+            # de la colección: lo tratamos como fallo, no como "sin ofertas".
+            raise StoreError(
+                "Vans no devolvió productos; ¿cambió la colección "
+                f"'{config.VANS_PRODUCTS_JSON}'?"
+            )
+        return products
+
+    @staticmethod
+    def _get_page(client: httpx.Client, page: int) -> list[dict]:
+        """Descarga una página reintentando solo esa página. Ante 429/5xx
+        respeta ``Retry-After`` y espera con backoff exponencial."""
         last_err: Exception | None = None
-        for attempt in range(config.RETRIES + 1):
+        for attempt in range(config.VANS_RETRIES + 1):
+            wait = config.VANS_BACKOFF * (2**attempt)
             try:
-                products: list[dict] = []
-                with httpx.Client(
-                    timeout=config.HTTP_TIMEOUT,
-                    headers=headers,
-                    follow_redirects=True,
-                ) as client:
-                    for page in range(1, config.MAX_PAGES + 1):
-                        resp = client.get(
-                            config.VANS_PRODUCTS_JSON,
-                            params={"limit": 250, "page": page},
-                        )
-                        resp.raise_for_status()
-                        batch = resp.json().get("products", [])
-                        if not batch:
-                            break
-                        products.extend(batch)
-                        time.sleep(config.REQUEST_DELAY[0])
-                if not products:
-                    # Shopify devuelve 200 y {"products":[]} si cambia el handle
-                    # de la colección: lo tratamos como fallo, no como "sin ofertas".
-                    raise StoreError(
-                        "Vans no devolvió productos; ¿cambió la colección "
-                        f"'{config.VANS_PRODUCTS_JSON}'?"
-                    )
-                return products
+                resp = client.get(
+                    config.VANS_PRODUCTS_JSON, params={"limit": 250, "page": page}
+                )
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    retry_after = resp.headers.get("Retry-After", "")
+                    if retry_after.isdigit():
+                        wait = max(wait, min(int(retry_after), 120))
+                resp.raise_for_status()
+                return resp.json().get("products", [])
             except (httpx.HTTPError, ValueError) as err:  # ValueError = JSON inválido
                 last_err = err
-                time.sleep(2 * (attempt + 1))
+                retryable = not isinstance(err, httpx.HTTPStatusError) or (
+                    err.response.status_code == 429 or err.response.status_code >= 500
+                )
+                if not retryable or attempt == config.VANS_RETRIES:
+                    break
+                time.sleep(wait)
         raise StoreError(f"no se pudo descargar el catálogo de Vans: {last_err}")
 
 
